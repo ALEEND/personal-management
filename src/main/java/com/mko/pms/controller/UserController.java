@@ -5,10 +5,13 @@ import com.mko.pms.enetity.UserInfo;
 import com.mko.pms.repository.UserInfoRepository;
 import com.mko.pms.util.MKOResponse;
 import com.mko.pms.util.MKOResponseCode;
+import org.hibernate.query.NativeQuery;
+import org.hibernate.transform.Transformers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
 
+import javax.persistence.Query;
 import java.util.*;
 
 
@@ -55,7 +58,7 @@ public class UserController extends BaseController {
             int page = pageRequest.getPageNumber();
             Map<String, Object> userParam = new HashMap<>();
             String fields = "*";
-            String condition = "select *from pms where 1=1 ";
+            String condition = " ";
             if (!state.equals("")) {
                 condition = condition + ("AND state = " + state + "");
             }
@@ -128,13 +131,16 @@ public class UserController extends BaseController {
             if(addResult != null){
                 return makeResponse(MKOResponseCode.DataExist,"","数据已存在");
             }
+            if(userInfoData.getPassword()==null || userInfoData.getTel()==null){
+                return makeResponse(MKOResponseCode.ParamsLack,"","缺少参数");
+            }
             UserInfo userInfo=new UserInfo();
             userInfo.setName(userInfoData.getName());
             userInfo.setTel(userInfoData.getTel());
             userInfo.setPassword(userInfoData.getPassword());
             userInfo.setAge(userInfoData.getAge());
-            userInfo.setSex(userInfoData.getSex());
-            userInfo.setRole(userInfoData.getRole());
+            userInfo.setSex(userInfoData.getSex()==null ? 0:userInfoData.getSex());
+            userInfo.setRole(userInfoData.getRole()==null ? 0 :userInfoData.getRole());
             userInfo.setGmtCreate(new Date());
             personRepository.save(userInfo);
             return makeSuccessResponse("已添加");
@@ -157,12 +163,13 @@ public class UserController extends BaseController {
             }
             UserInfo userInfo=new UserInfo();
             userInfo.setId(userInfoData.getId());
-            userInfo.setName(userInfoData.getName());
-            userInfo.setPassword(userInfoData.getPassword());
-            userInfo.setAge(userInfoData.getAge());
-            userInfo.setSex(userInfoData.getSex());
-            userInfo.setRole(userInfoData.getRole());
-            userInfo.setState(userInfoData.getState());
+            userInfo.setTel(updateResult.getTel());
+            userInfo.setName(userInfoData.getName()==null?  updateResult.getName():userInfoData.getName());
+            userInfo.setPassword(userInfoData.getPassword()== null ? updateResult.getPassword():userInfoData.getPassword());
+            userInfo.setAge(userInfoData.getAge()==null ? updateResult.getAge() : userInfoData.getAge());
+            userInfo.setSex(userInfoData.getSex()==null ? updateResult.getSex(): userInfoData.getSex());
+            userInfo.setRole(userInfoData.getRole()==null ? updateResult.getRole():userInfoData.getRole());
+            userInfo.setState(userInfoData.getState() ==null ? updateResult.getState():userInfoData.getState());
             userInfo.setGmtCreate(new Date());
             personRepository.saveAndFlush(userInfo);
             return makeSuccessResponse("");
@@ -172,7 +179,46 @@ public class UserController extends BaseController {
         }
 
     }
+    public Object getRecord(String fields, String table, String condition, Map<String, Object> parameter, String orderBy, Integer page, Integer count){
+        try {
+            StringBuilder sqlCount = new StringBuilder(String.format("SELECT COUNT(*) count FROM %s WHERE 1=1 ", table));
 
+            StringBuilder sql = new StringBuilder(String.format("SELECT %s FROM %s WHERE 1=1 ", fields, table));
+
+            //构建sql
+            if (!condition.isEmpty()) {
+                sqlCount.append(condition);
+                sql.append(condition);
+            }
+
+            Query queryCount = entityManager.createNativeQuery(sqlCount.toString());
+
+
+            //分页
+            sql.append(String.format(" %s LIMIT %s, %s", orderBy, ((page - 1) * count), count));
+            Query query = entityManager.createNativeQuery(sql.toString());
+
+            for(Map.Entry<String, Object> entry : parameter.entrySet()){
+                queryCount.setParameter(entry.getKey(), entry.getValue());
+                query.setParameter(entry.getKey(), entry.getValue());
+            }
+
+            Map<String, Object> result = (Map<String, Object>) queryCount.unwrap(NativeQuery.class).setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP).getSingleResult();
+
+            int total = Integer.valueOf(result.get("count").toString());
+
+            if (total <= 0){
+                return withoutData();
+            }
+
+            List list = query.unwrap(NativeQuery.class).setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP).getResultList();
+
+            return listToString(list, page, count, total);
+        }catch (Exception e){
+            e.printStackTrace();
+            return withoutData();
+        }
+    }
 
 
 }
