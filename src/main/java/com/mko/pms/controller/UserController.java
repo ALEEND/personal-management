@@ -9,10 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 
 @RequestMapping(value = "pms")
@@ -23,10 +20,8 @@ public class UserController extends BaseController {
 
     @GetMapping("login")
     MKOResponse login(@RequestParam String tel, @RequestParam String password)
-//                      @RequestParam(value = "platform", defaultValue = "web") String platform)
     {
         try {
-
             UserInfo userInfo = personRepository.userlogin(tel, password);
             if (userInfo == null) {
                 return this.makeResponse(MKOResponseCode.DataNotFound, "用户不存在或已停用");
@@ -34,10 +29,11 @@ public class UserController extends BaseController {
             if (!userInfo.getPassword().equals(password)) {
                 return this.makeBussessErrorResponse("密码不匹配");
             }
-//            if (platform.equals("web") && userInfo.getRole().equals(0)) {
-//                return this.makeResponse(MKOResponseCode.NoPermission, "", "会员无权限登录此页面");
-//            }
-            return this.makeSuccessResponse(userInfo);
+            List list=new ArrayList();{
+                list.add(userInfo.getRole());
+                list.add(userInfo.getId());
+            }
+            return this.makeSuccessResponse(list);
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -49,10 +45,11 @@ public class UserController extends BaseController {
     @GetMapping("list")
     MKOResponse list(@RequestParam(defaultValue = "") String nameTel,
                      @RequestParam(defaultValue = "") Integer state,
-                     PageRequest pageRequest, UserInfo userInfo) {
+                     PageRequest pageRequest,@RequestParam Integer id) {
         try {
-            if (userInfo.getRole().equals(0)) {
-                return makeResponse(MKOResponseCode.NoPermission, "", "无权限查看用户列表");
+            Optional<UserInfo> r = personRepository.findById(id);
+            if ( r.get().getRole().equals(0)) {
+                return makeResponse(MKOResponseCode.NoPermission, "", "无权限访问");
             }
             int count = pageRequest.getPageSize();
             int page = pageRequest.getPageNumber();
@@ -74,14 +71,18 @@ public class UserController extends BaseController {
         }
     }
 
-    @GetMapping("Info")
-    MKOResponse info(@RequestParam Integer id, UserInfo userInfo) {
+    @GetMapping("info")
+    MKOResponse info(@RequestParam Integer id) {
         try {
-            if (userInfo.getRole().equals(0)) {
-                return makeResponse(MKOResponseCode.NoPermission, "", "无权限查看其他用户详情");
+            Optional<UserInfo> r = personRepository.findById(id);
+            if (!r.isPresent()) {
+                return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据");
             }
-            Optional<UserInfo> userResult = personRepository.findById(id);
-            if (userResult.isPresent()) {
+            if ( r.get().getRole().equals(0)) {
+                return makeResponse(MKOResponseCode.NoPermission, "", "无权限访问");
+            }
+                Optional<UserInfo> userResult = personRepository.findById(id);
+            if (!userResult.isPresent()) {
                 return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据");
             }
             return makeSuccessResponse(userResult.get());
@@ -92,14 +93,17 @@ public class UserController extends BaseController {
     }
 
     @GetMapping("delete")
-    MKOResponse delete(@RequestParam Integer id, UserInfo userInfo) {
+    MKOResponse delete(@RequestParam Integer id) {
         try {
-            if (userInfo.getRole().equals(0)) {
+            Optional<UserInfo> r = personRepository.findById(id);
+            if (!r.isPresent()) {
+                return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据");
+            }
+            if ( r.get().getRole().equals(0)) {
                 return makeResponse(MKOResponseCode.NoPermission, "", "无权限访问");
             }
             Optional<UserInfo> userResult = personRepository.findById(id);
-//             UserInfo userResult=personRepository.getOne(id);
-            if (userResult.isPresent()) {
+            if (!userResult.isPresent()) {
                 return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据");
             }
             this.personRepository.delete(userResult.get());
@@ -110,15 +114,19 @@ public class UserController extends BaseController {
             return makeBussessErrorResponse("未知错误");
         }
     }
-    @GetMapping("add")
-    MKOResponse add(@RequestBody UserInfo userInfoData,String tel){
+    @PostMapping ("add")
+    MKOResponse add(@RequestBody UserInfo userInfoData,@RequestParam Integer id){
         try{
-            UserInfo telResult =personRepository.findByTel(tel);
-            if(telResult.equals("")){
-                return makeResponse(MKOResponseCode.DataNotFound,"","找不到数据");
+            Optional<UserInfo> r=personRepository.findById(id);
+            if(r.get().getRole().equals(0)){
+                return  makeResponse(MKOResponseCode.NoPermission,"","无权限访问");
             }
-            if(telResult.getTel().length()!=11){
+            if(userInfoData.getTel()==null || userInfoData.getTel().length()!=11){
                 return makeResponse(MKOResponseCode.DataFormatError,"","格式错误");
+            }
+            UserInfo addResult=personRepository.findByTel(userInfoData.getTel());
+            if(addResult != null){
+                return makeResponse(MKOResponseCode.DataExist,"","数据已存在");
             }
             UserInfo userInfo=new UserInfo();
             userInfo.setName(userInfoData.getName());
@@ -128,7 +136,7 @@ public class UserController extends BaseController {
             userInfo.setSex(userInfoData.getSex());
             userInfo.setRole(userInfoData.getRole());
             userInfo.setGmtCreate(new Date());
-            personRepository.saveAndFlush(userInfo);
+            personRepository.save(userInfo);
             return makeSuccessResponse("已添加");
         }catch (Exception e){
             e.printStackTrace();
@@ -136,20 +144,19 @@ public class UserController extends BaseController {
         }
     }
 
-    @GetMapping("update")
-    MKOResponse update(@RequestBody UserInfo userInfoData,UserInfo userRole){
+    @PostMapping("update")
+    MKOResponse update(@RequestBody UserInfo userInfoData){
         try{
-            if(userRole.getRole().equals(0)){
-                return makeResponse(MKOResponseCode.NoPermission,"","无权限");
+
+            if(userInfoData.getId()==null || userInfoData.getId()<=0){
+                return makeParamsLackResponse("缺少参数或[id]小于等于0");
             }
-            if(userInfoData.getId()==null || userInfoData.getId() <= 0){
-                return makeParamsLackResponse("缺少参数或者[id]小于等于0");
-            }
-            Optional<UserInfo> userResult =personRepository.findById(userInfoData.getId());
-            if(userResult.isPresent()){
-                return makeResponse(MKOResponseCode.DataNotFound,"找不到数据");
+            UserInfo updateResult=personRepository.chooseID(userInfoData.getId());
+            if(updateResult==null){
+                return makeResponse(MKOResponseCode.DataNotFound,"","找不到该数据");
             }
             UserInfo userInfo=new UserInfo();
+            userInfo.setId(userInfoData.getId());
             userInfo.setName(userInfoData.getName());
             userInfo.setPassword(userInfoData.getPassword());
             userInfo.setAge(userInfoData.getAge());
@@ -158,7 +165,7 @@ public class UserController extends BaseController {
             userInfo.setState(userInfoData.getState());
             userInfo.setGmtCreate(new Date());
             personRepository.saveAndFlush(userInfo);
-            return makeSuccessResponse(null);
+            return makeSuccessResponse("");
         }catch (Exception e){
             e.printStackTrace();
             return makeBussessErrorResponse("未知错误");
