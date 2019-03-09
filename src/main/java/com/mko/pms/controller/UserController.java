@@ -72,15 +72,15 @@ public class UserController extends BaseController {
     @GetMapping("list")
     MKOResponse list(@RequestParam(defaultValue = "") String nameAndTel,
                      @RequestParam(defaultValue = "-1") Integer state,
-                     @RequestParam Integer userId,
-                     Integer count,Integer page) {
+                     @RequestParam Integer id,
+                     int count,int page) {
         try {
-            Optional<UserInfo> r = personRepository.findById(userId);
+            Optional<UserInfo> r = personRepository.findById(id);
             if (r.get().getRole().equals(0)) {
-                return makeResponse(MKOResponseCode.NoPermission, "", "无权限访问");
+                return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
             StringBuilder sqlCount=new StringBuilder("select count(*) count from pms where 1=1");
-            StringBuilder sql=new StringBuilder("select *from pms where 1=1");
+            StringBuilder sql=new StringBuilder("select id,name,sex,tel,age,state,gmtcreate from pms where 1=1");
             String condition = " ";
             if (-1 != state) {
                 condition = condition + ("AND state = " + state + " ");
@@ -93,7 +93,9 @@ public class UserController extends BaseController {
                 sql.append((condition));
             }
             Query queryCount=entityManager.createNativeQuery(sqlCount.toString());
-            sql.append("LIMIT "+(page-1)*count +"," + count);
+            sql.append("ORDER BY id DESC ");
+            sql.append("    LIMIT "+(page-1)*count +"," + count);
+
             Query query=entityManager.createNativeQuery(sql.toString());
             Map<String,Object> result=(Map<String,Object>) queryCount.unwrap(NativeQuery.class).setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP).getSingleResult();
             int total=Integer.parseInt(result.get("count").toString());
@@ -117,16 +119,13 @@ public class UserController extends BaseController {
         try {
             Optional<UserInfo> r = personRepository.findById(id);
             if (!r.isPresent()) {
-                return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据");
+                return makeResponse(MKOResponseCode.DataNotFound, "找不到数据");
             }
             if (r.get().getRole().equals(0)) {
-                return makeResponse(MKOResponseCode.NoPermission, "", "无权限访问");
+                return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
-            Optional<UserInfo> userResult = personRepository.findById(id);
-            if (!userResult.isPresent()) {
-                return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据");
-            }
-            return makeSuccessResponse(userResult.get());
+            r.get().setPassword("**********");
+            return makeSuccessResponse(r.get());
         } catch (Exception e) {
             e.printStackTrace();
             return makeBussessErrorResponse("未知错误");
@@ -144,17 +143,10 @@ public class UserController extends BaseController {
         try {
             Optional<UserInfo> r = personRepository.findById(id);
             if (!r.isPresent()) {
-                return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据");
+                return makeResponse(MKOResponseCode.DataNotFound, "找不到数据");
             }
-            if (r.get().getRole().equals(0)) {
-                return makeResponse(MKOResponseCode.NoPermission, "", "无权限访问");
-            }
-            Optional<UserInfo> userResult = personRepository.findById(id);
-            if (!userResult.isPresent()) {
-                return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据");
-            }
-            this.personRepository.delete(userResult.get());
-            return makeSuccessResponse("");
+            this.personRepository.delete(r.get());
+            return makeSuccessResponse("已删除");
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -169,21 +161,21 @@ public class UserController extends BaseController {
      * @create: 2019-03-07
      **/
     @PostMapping("add")
-    MKOResponse add(@RequestBody UserInfo userInfoData, @RequestParam Integer id) {
+    MKOResponse add(@RequestBody UserInfo userInfoData, @RequestParam Integer   id) {
         try {
             Optional<UserInfo> r = personRepository.findById(id);
             if (r.get().getRole().equals(0)) {
-                return makeResponse(MKOResponseCode.NoPermission, "", "无权限访问");
+                return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
             if (userInfoData.getTel() == null || userInfoData.getTel().length() != 11) {
-                return makeResponse(MKOResponseCode.DataFormatError, "", "格式错误");
+                return makeResponse(MKOResponseCode.DataFormatError, "格式错误");
             }
             UserInfo addResult = personRepository.findByTel(userInfoData.getTel());
             if (addResult != null) {
-                return makeResponse(MKOResponseCode.DataExist, "", "数据已存在");
+                return makeResponse(MKOResponseCode.DataExist, "数据已存在");
             }
             if (userInfoData.getPassword() == null || userInfoData.getTel() == null) {
-                return makeResponse(MKOResponseCode.ParamsLack, "", "缺少参数");
+                return makeResponse(MKOResponseCode.ParamsLack, "缺少参数");
             }
             UserInfo userInfo = new UserInfo();
             userInfo.setName(userInfoData.getName());
@@ -193,7 +185,7 @@ public class UserController extends BaseController {
             userInfo.setSex(userInfoData.getSex() == null ? 0 : userInfoData.getSex());
             userInfo.setRole(userInfoData.getRole() == null ? 0 : userInfoData.getRole());
             userInfo.setGmtCreate(new Date());
-            personRepository.save(userInfo);
+            personRepository.saveAndFlush(userInfo);
             return makeSuccessResponse("已添加");
         } catch (Exception e) {
             e.printStackTrace();
@@ -216,7 +208,10 @@ public class UserController extends BaseController {
             }
             UserInfo updateResult = personRepository.chooseID(userInfoData.getId());
             if (updateResult == null) {
-                return makeResponse(MKOResponseCode.DataNotFound, "", "找不到该数据");
+                return makeResponse(MKOResponseCode.DataNotFound, "找不到该数据");
+            }
+            if(personRepository.chooseID(userInfoData.getId())!=null){
+                return makeResponse(MKOResponseCode.DataExist,"姓名已存在");
             }
             UserInfo userInfo = new UserInfo();
             userInfo.setId(userInfoData.getId());
@@ -229,7 +224,7 @@ public class UserController extends BaseController {
             userInfo.setState(userInfoData.getState() == null ? updateResult.getState() : userInfoData.getState());
             userInfo.setGmtCreate(new Date());
             personRepository.saveAndFlush(userInfo);
-            return makeSuccessResponse("");
+            return makeSuccessResponse("已修改");
         } catch (Exception e) {
             e.printStackTrace();
             return makeBussessErrorResponse("未知错误");
@@ -237,15 +232,38 @@ public class UserController extends BaseController {
 
     }
 
-    public Object ListToString(List list,Integer page,Integer count ,int countNumber){
+    /**
+     * @program: person manager system
+     * @description: 转换状态模块
+     * @author: Yuxz
+     * @create: 2019-03-09
+     **/
+    @GetMapping("swich")
+    MKOResponse swich(@RequestParam Integer id,
+                      @RequestParam Integer state){
+        try{
+            Optional<UserInfo> userInfo=personRepository.findById(id);
+            if(!userInfo.isPresent()){
+                return makeResponse(MKOResponseCode.DataNotFound,"找不到此ID");
+            }
+            userInfo.get().setState(state);
+            userInfo.get().getGmtCreate();
+            personRepository.saveAndFlush(userInfo.get());
+            return makeResponse(MKOResponseCode.Success,"转换状态成功");
+        }catch(Exception e){
+            e.printStackTrace();
+            return makeBussessErrorResponse("未知错误");
+        }
+    }
+    public Object ListToString(List list,int page,int count ,int countNumber){
         Map<String,Object> map=new HashMap<String, Object>();
         //当前页数
         map.put("page",page);
         //总页数
-        if(count==0){
+        if ( count==0 ){
             map.put("pageCount",count);
         }else {
-            map.put("pageCount",countNumber/count);
+            map.put("pageCount",(countNumber-1)/count + 1);
         }
         //每页条数
         map.put("count",count);
