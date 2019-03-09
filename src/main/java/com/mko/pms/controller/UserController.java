@@ -1,5 +1,6 @@
 package com.mko.pms.controller;
 
+import com.alibaba.fastjson.JSONObject;
 import com.mko.pms.annotation.MKOUserPermission;
 import com.mko.pms.enetity.UserInfo;
 import com.mko.pms.repository.UserInfoRepository;
@@ -45,11 +46,16 @@ public class UserController extends BaseController {
             if (!userInfo.getPassword().equals(password)) {
                 return this.makeBussessErrorResponse("密码不匹配");
             }
-            Map<String,Object> map=new HashMap<>();
-            map.put("id",userInfo.getId());
-            map.put("role",userInfo.getRole());
-            return this.makeSuccessResponse(map);
-//            List list = new ArrayList();
+            JSONObject jsonObject=new JSONObject();
+            jsonObject.put("id",userInfo.getId());
+            jsonObject.put("name",userInfo.getName());
+            jsonObject.put("sex",userInfo.getSex());
+            jsonObject.put("age",userInfo.getAge());;
+            jsonObject.put("tel",userInfo.getTel());
+            jsonObject.put("role",userInfo.getRole());
+            jsonObject.put("state",userInfo.getState());
+            jsonObject.put("gmtCreate",userInfo.getGmtCreate());
+            return this.makeSuccessResponse(jsonObject);
 //            {
 //                list.add(userInfo.getRole());
 //                list.add(userInfo.getId());
@@ -79,7 +85,6 @@ public class UserController extends BaseController {
             if (r.get().getRole().equals(0)) {
                 return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
-
             StringBuilder sqlCount=new StringBuilder("select count(*) count from pms where 1=1");
             StringBuilder sql=new StringBuilder("select id,name,sex,tel,age,state,gmtcreate from pms where 1=1");
             //筛选
