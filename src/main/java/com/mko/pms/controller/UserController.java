@@ -73,14 +73,16 @@ public class UserController extends BaseController {
     MKOResponse list(@RequestParam(defaultValue = "") String nameAndTel,
                      @RequestParam(defaultValue = "-1") Integer state,
                      @RequestParam Integer id,
-                     int count,int page) {
+                     @RequestParam int count,@RequestParam int page) {
         try {
             Optional<UserInfo> r = personRepository.findById(id);
             if (r.get().getRole().equals(0)) {
                 return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
+
             StringBuilder sqlCount=new StringBuilder("select count(*) count from pms where 1=1");
             StringBuilder sql=new StringBuilder("select id,name,sex,tel,age,state,gmtcreate from pms where 1=1");
+            //筛选
             String condition = " ";
             if (-1 != state) {
                 condition = condition + ("AND state = " + state + " ");
@@ -93,9 +95,10 @@ public class UserController extends BaseController {
                 sql.append((condition));
             }
             Query queryCount=entityManager.createNativeQuery(sqlCount.toString());
+            //遍历
             sql.append("ORDER BY id DESC ");
+            //分页
             sql.append("    LIMIT "+(page-1)*count +"," + count);
-
             Query query=entityManager.createNativeQuery(sql.toString());
             Map<String,Object> result=(Map<String,Object>) queryCount.unwrap(NativeQuery.class).setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP).getSingleResult();
             int total=Integer.parseInt(result.get("count").toString());
