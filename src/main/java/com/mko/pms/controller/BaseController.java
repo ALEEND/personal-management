@@ -151,7 +151,8 @@ public class BaseController {
             }
 
             Map<String, Object> result = (Map<String, Object>) queryCount.unwrap(NativeQuery.class).setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP).getSingleResult();
-
+    // setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP).list()方法返回一个LIst,但是List中的字段是以Map形式封装的，
+    // 但是该方法有一坑就是在页面端取数据时，Key的大小写一定要与数据库中的字段一致，否则，即使你查处结果，你也无法获取
             int total = Integer.valueOf(result.get("count").toString());
 
             if (total <= 0){
