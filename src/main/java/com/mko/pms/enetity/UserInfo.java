@@ -1,5 +1,6 @@
 package com.mko.pms.enetity;
 
+import com.alibaba.fastjson.annotation.JSONField;
 import lombok.*;
 
 import javax.persistence.*;
@@ -23,6 +24,7 @@ public class UserInfo {
     private String name;
     private Integer sex;
     private String tel;
+
     private String password;
     private Integer age;
     private Integer role;

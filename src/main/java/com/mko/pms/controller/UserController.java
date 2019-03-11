@@ -1,35 +1,45 @@
 package com.mko.pms.controller;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.mko.pms.annotation.MKOUserPermission;
 import com.mko.pms.enetity.UserInfo;
 import com.mko.pms.repository.UserInfoRepository;
+import com.mko.pms.util.MD5Util;
 import com.mko.pms.util.MKOResponse;
 import com.mko.pms.util.MKOResponseCode;
+import com.mko.pms.util.TokenUtils;
+import jdk.nashorn.internal.parser.TokenKind;
+import org.apache.commons.lang.StringUtils;
 import org.hibernate.query.NativeQuery;
 import org.hibernate.transform.Transformers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import javax.persistence.Query;
 import javax.transaction.Transactional;
+import java.math.BigInteger;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.locks.Condition;
-
 /**
  * @program: person manager system
- * @description: 功能模块
+ * @description: 用户功能模块
  * @author: Yuxz
  * @create: 2019-03-07
  **/
 @RequestMapping(value = "pms")
 @RestController
+
+
 public class UserController extends BaseController {
     @Autowired
     private UserInfoRepository personRepository;
-
-
+    @Autowired
+    StringRedisTemplate redisTemplate;
     /**
      * @program: person manager system
      * @description: 登陆模块
@@ -39,32 +49,29 @@ public class UserController extends BaseController {
     @GetMapping("login")
     MKOResponse login(@RequestParam String tel, @RequestParam String password) {
         try {
-            UserInfo userInfo = personRepository.userlogin(tel, password);
+            UserInfo userInfo = personRepository.findByTel(tel);
             if (userInfo == null) {
-                return this.makeResponse(MKOResponseCode.DataNotFound, "用户不存在或已停用");
+                return this.makeResponse(MKOResponseCode.DataNotFound, "用户不存在");
             }
             if (!userInfo.getPassword().equals(password)) {
-                return this.makeBussessErrorResponse("密码不匹配");
+                return this.makeBussessErrorResponse("密码错误");
             }
-            JSONObject jsonObject=new JSONObject();
-            jsonObject.put("id",userInfo.getId());
-            jsonObject.put("name",userInfo.getName());
-            jsonObject.put("sex",userInfo.getSex());
-            jsonObject.put("age",userInfo.getAge());;
-            jsonObject.put("tel",userInfo.getTel());
-            jsonObject.put("role",userInfo.getRole());
-            jsonObject.put("state",userInfo.getState());
-            jsonObject.put("gmtCreate",userInfo.getGmtCreate());
-            return this.makeSuccessResponse(jsonObject);
-//            {
-//                list.add(userInfo.getRole());
-//                list.add(userInfo.getId());
-//            }
-//            return this.makeSuccessResponse(list);
+            if(userInfo.getState()!=1){
+                return this.makeResponse(MKOResponseCode.DataNotFound, "用户已停用");
+            }
+            String token = this.refreshToken(userInfo);
+            JSONObject obj = (JSONObject) JSONObject.toJSON(userInfo);
+            obj.remove("password");
+            JSONObject result = new JSONObject();
+            result.put("userInfo", obj);
+            result.put("token", token);
+            return this.makeSuccessResponse(result);
+//            System.out.println(token);
+
 
         } catch (Exception e) {
             e.printStackTrace();
-            return makeBussessErrorResponse("其他异常！");
+            return makeBussessErrorResponse("其他异常，登录失败！");
         }
     }
 
@@ -82,7 +89,7 @@ public class UserController extends BaseController {
                      @RequestParam int count,@RequestParam int page) {
         try {
             Optional<UserInfo> r = personRepository.findById(id);
-            if (r.get().getRole().equals(0)) {
+            if (!r.get().getRole().equals(1)) {
                 return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
             StringBuilder sqlCount=new StringBuilder("select count(*) count from pms where 1=1");
@@ -108,8 +115,8 @@ public class UserController extends BaseController {
             Map<String,Object> result=(Map<String,Object>) queryCount.unwrap(NativeQuery.class).setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP).getSingleResult();
             int total=Integer.parseInt(result.get("count").toString());
             List list=query.unwrap(NativeQuery.class).setResultTransformer(Transformers.ALIAS_TO_ENTITY_MAP).getResultList();
-            Object Aresult=ListToString(list,page,count,total);
-        return makeResponse(MKOResponseCode.Success, Aresult, "");
+            Object resultAll=ListToString(list,page,count,total);
+        return makeResponse(MKOResponseCode.Success, resultAll, "");
         } catch (Exception e) {
             e.printStackTrace();
             return makeBussessErrorResponse("未知错误");
@@ -125,15 +132,13 @@ public class UserController extends BaseController {
     @GetMapping("info")
     MKOResponse info(@RequestParam Integer id) {
         try {
-            Optional<UserInfo> r = personRepository.findById(id);
-            if (!r.isPresent()) {
+            Optional<UserInfo> userInfo = personRepository.findById(id);
+            if (!userInfo.isPresent()) {
                 return makeResponse(MKOResponseCode.DataNotFound, "找不到数据");
             }
-            if (r.get().getRole().equals(0)) {
-                return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
-            }
-            r.get().setPassword("**********");
-            return makeSuccessResponse(r.get());
+            JSONObject obj = (JSONObject) JSONObject.toJSON(userInfo);
+            obj.remove("password");
+            return makeSuccessResponse(obj);
         } catch (Exception e) {
             e.printStackTrace();
             return makeBussessErrorResponse("未知错误");
@@ -149,11 +154,11 @@ public class UserController extends BaseController {
     @GetMapping("delete")
     MKOResponse delete(@RequestParam Integer id) {
         try {
-            Optional<UserInfo> r = personRepository.findById(id);
-            if (!r.isPresent()) {
+            Optional<UserInfo> result = personRepository.findById(id);
+            if (!result.isPresent()) {
                 return makeResponse(MKOResponseCode.DataNotFound, "找不到数据");
             }
-            this.personRepository.delete(r.get());
+            this.personRepository.delete(result.get());
             return makeSuccessResponse("已删除");
 
         } catch (Exception e) {
@@ -170,21 +175,21 @@ public class UserController extends BaseController {
      **/
     @PostMapping("add")
     MKOResponse add(@RequestBody UserInfo userInfoData, @RequestParam Integer   id) {
-        try {
-            Optional<UserInfo> r = personRepository.findById(id);
-            if (r.get().getRole().equals(0)) {
+            try {
+            Optional<UserInfo> result = personRepository.findById(id);
+            if (result.get().getRole().equals(0)) {
                 return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
             if (userInfoData.getTel() == null || userInfoData.getTel().length() != 11) {
-                return makeResponse(MKOResponseCode.DataFormatError, "格式错误");
+                return makeResponse(MKOResponseCode.DataFormatError, "格式错误或密码为空");
             }
-            UserInfo addResult = personRepository.findByTel(userInfoData.getTel());
-            if (addResult != null) {
-                return makeResponse(MKOResponseCode.DataExist, "数据已存在");
-            }
-            if (userInfoData.getPassword() == null || userInfoData.getTel() == null) {
-                return makeResponse(MKOResponseCode.ParamsLack, "缺少参数");
-            }
+                UserInfo addResult = personRepository.findByTel(userInfoData.getTel());
+                if (addResult != null) {
+                    return makeResponse(MKOResponseCode.DataExist, "手机号码已存在");
+                }
+                if (userInfoData.getPassword() == null || userInfoData.getTel() == null) {
+                    return makeResponse(MKOResponseCode.ParamsLack, "缺少[password]或[Tel]参数");
+                }
             UserInfo userInfo = new UserInfo();
             userInfo.setName(userInfoData.getName());
             userInfo.setTel(userInfoData.getTel());
@@ -281,6 +286,28 @@ public class UserController extends BaseController {
         map.put("datas",list);
         return  map;
     }
+    public String refreshToken(UserInfo userInfo){
+        String token = TokenUtils.getToken(userInfo.getTel());
+        String userTokenKey = formatUserTokenKey(userInfo.getTel());
+        String lastToken = redisTemplate.opsForValue().get(userTokenKey);
+        if (StringUtils.isNotEmpty(lastToken)) {
+            redisTemplate.delete(this.formatTokenKey(lastToken));
+        }
+        redisTemplate.opsForValue().set(userTokenKey, token);
+        redisTemplate.opsForValue().set(this.formatTokenKey(token), JSONObject.toJSONString(userInfo));
+        return token;
+    }
+
+
+   private String formatTokenKey(String token) {
+
+        return String.format("%s", token);
+    }
+    private String formatUserTokenKey(String loginName) {
+        String md5 = MD5Util.getMD5(loginName);
+        return String.format("%s",md5);
+    }
+
 
 
 }
