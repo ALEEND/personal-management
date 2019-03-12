@@ -50,12 +50,15 @@ public class UserController extends BaseController {
     MKOResponse login(@RequestParam String tel, @RequestParam String password) {
         try {
             UserInfo userInfo = personRepository.findByTel(tel);
+            //验证用户是否存在
             if (userInfo == null) {
                 return this.makeResponse(MKOResponseCode.DataNotFound, "用户不存在");
             }
+            //验证密码
             if (!userInfo.getPassword().equals(password)) {
                 return this.makeBussessErrorResponse("密码错误");
             }
+            //验证停用与禁用
             if(userInfo.getState()!=1){
                 return this.makeResponse(MKOResponseCode.DataNotFound, "用户已停用");
             }
@@ -89,6 +92,7 @@ public class UserController extends BaseController {
                      @RequestParam int count,@RequestParam int page) {
         try {
             Optional<UserInfo> r = personRepository.findById(id);
+            //判断权限
             if (!r.get().getRole().equals(1)) {
                 return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
@@ -177,15 +181,21 @@ public class UserController extends BaseController {
     MKOResponse add(@RequestBody UserInfo userInfoData, @RequestParam Integer   id) {
             try {
             Optional<UserInfo> result = personRepository.findById(id);
-            if (result.get().getRole().equals(0)) {
+            if (!result.get().getRole().equals(1)) {
                 return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
+            //判断手机号码格式
             if (userInfoData.getTel() == null || userInfoData.getTel().length() != 11) {
                 return makeResponse(MKOResponseCode.DataFormatError, "格式错误或密码为空");
             }
-                UserInfo addResult = personRepository.findByTel(userInfoData.getTel());
-                if (addResult != null) {
+            //验证手机号码是否存在
+                UserInfo telResult = personRepository.findByTel(userInfoData.getTel());
+                if (telResult != null) {
                     return makeResponse(MKOResponseCode.DataExist, "手机号码已存在");
+                }
+                //验证姓名是否存在
+                if(personRepository.fingName(userInfoData.getName())!=null){
+                    return makeResponse(MKOResponseCode.DataExist, "姓名已存在");
                 }
                 if (userInfoData.getPassword() == null || userInfoData.getTel() == null) {
                     return makeResponse(MKOResponseCode.ParamsLack, "缺少[password]或[Tel]参数");
@@ -219,11 +229,13 @@ public class UserController extends BaseController {
             if (userInfoData.getId() == null || userInfoData.getId() <= 0) {
                 return makeParamsLackResponse("缺少参数或[id]小于等于0");
             }
+            //判断ID
             UserInfo updateResult = personRepository.chooseID(userInfoData.getId());
             if (updateResult == null) {
                 return makeResponse(MKOResponseCode.DataNotFound, "找不到该数据");
             }
-            if(personRepository.chooseID(userInfoData.getId())!=null){
+            //判断姓名是否存在
+            if(personRepository.fingName(userInfoData.getName())!=null){
                 return makeResponse(MKOResponseCode.DataExist,"姓名已存在");
             }
             UserInfo userInfo = new UserInfo();
@@ -268,6 +280,11 @@ public class UserController extends BaseController {
             return makeBussessErrorResponse("未知错误");
         }
     }
+
+
+    /*
+    * 列表数据
+    * */
     public Object ListToString(List list,int page,int count ,int countNumber){
         Map<String,Object> map=new HashMap<String, Object>();
         //当前页数
@@ -286,6 +303,8 @@ public class UserController extends BaseController {
         map.put("datas",list);
         return  map;
     }
+
+    //Md5验证 Token方法
     public String refreshToken(UserInfo userInfo){
         String token = TokenUtils.getToken(userInfo.getTel());
         String userTokenKey = formatUserTokenKey(userInfo.getTel());
