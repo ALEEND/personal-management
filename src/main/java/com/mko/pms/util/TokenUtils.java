@@ -10,7 +10,7 @@ import java.security.MessageDigest;
  * @date 2019-03-11 14:44
  */
 public class TokenUtils {
-    private static final String KEY = "PMS_DG@#!~20190311";
+    private static final String KEY = "USER_DG@#!~20190311";
 
     public static String getToken(String loginName) {
         String str = String.format("%s%s", loginName, KEY);

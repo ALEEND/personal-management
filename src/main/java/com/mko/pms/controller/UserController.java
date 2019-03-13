@@ -88,16 +88,10 @@ public class UserController extends BaseController {
     @GetMapping("list")
     MKOResponse list(@RequestParam(defaultValue = "") String nameAndTel,
                      @RequestParam(defaultValue = "-1") Integer state,
-                     @RequestParam Integer id,
                      @RequestParam int count,@RequestParam int page) {
         try {
-            Optional<UserInfo> r = personRepository.findById(id);
-            //判断权限
-            if (!r.get().getRole().equals(1)) {
-                return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
-            }
-            StringBuilder sqlCount=new StringBuilder("select count(*) count from pms where 1=1");
-            StringBuilder sql=new StringBuilder("select id,name,sex,tel,age,state,gmtcreate from pms where 1=1");
+            StringBuilder sqlCount=new StringBuilder("select count(*) count from user where 1=1");
+            StringBuilder sql=new StringBuilder("select id,name,sex,tel,age,state,role,gmtcreate from user where 1=1");
             //筛选
             String condition = " ";
             if (-1 != state) {
@@ -162,6 +156,7 @@ public class UserController extends BaseController {
             if (!result.isPresent()) {
                 return makeResponse(MKOResponseCode.DataNotFound, "找不到数据");
             }
+
             this.personRepository.delete(result.get());
             return makeSuccessResponse("已删除");
 
@@ -169,6 +164,8 @@ public class UserController extends BaseController {
             e.printStackTrace();
             return makeBussessErrorResponse("未知错误");
         }
+
+
     }
 
     /**
@@ -179,12 +176,13 @@ public class UserController extends BaseController {
      **/
     @PostMapping("add")
     MKOResponse add(@RequestBody UserInfo userInfoData, @RequestParam Integer   id) {
-            try {
+        try {
             Optional<UserInfo> result = personRepository.findById(id);
             if (!result.get().getRole().equals(1)) {
                 return makeResponse(MKOResponseCode.NoPermission, "无权限访问");
             }
             //判断手机号码格式
+//            if (StringUtils.isEmpty(userInfoData.getTel())){}
             if (userInfoData.getTel() == null || userInfoData.getTel().length() != 11) {
                 return makeResponse(MKOResponseCode.DataFormatError, "格式错误或密码为空");
             }
@@ -192,10 +190,6 @@ public class UserController extends BaseController {
                 UserInfo telResult = personRepository.findByTel(userInfoData.getTel());
                 if (telResult != null) {
                     return makeResponse(MKOResponseCode.DataExist, "手机号码已存在");
-                }
-                //验证姓名是否存在
-                if(personRepository.fingName(userInfoData.getName())!=null){
-                    return makeResponse(MKOResponseCode.DataExist, "姓名已存在");
                 }
                 if (userInfoData.getPassword() == null || userInfoData.getTel() == null) {
                     return makeResponse(MKOResponseCode.ParamsLack, "缺少[password]或[Tel]参数");
@@ -207,6 +201,7 @@ public class UserController extends BaseController {
             userInfo.setAge(userInfoData.getAge());
             userInfo.setSex(userInfoData.getSex() == null ? 0 : userInfoData.getSex());
             userInfo.setRole(userInfoData.getRole() == null ? 0 : userInfoData.getRole());
+            userInfo.setState(userInfoData.getState()==null ? 1 : userInfoData.getState());
             userInfo.setGmtCreate(new Date());
             personRepository.saveAndFlush(userInfo);
             return makeSuccessResponse("已添加");
@@ -234,19 +229,16 @@ public class UserController extends BaseController {
             if (updateResult == null) {
                 return makeResponse(MKOResponseCode.DataNotFound, "找不到该数据");
             }
-            //判断姓名是否存在
-            if(personRepository.fingName(userInfoData.getName())!=null){
-                return makeResponse(MKOResponseCode.DataExist,"姓名已存在");
-            }
+
             UserInfo userInfo = new UserInfo();
             userInfo.setId(userInfoData.getId());
             userInfo.setTel(updateResult.getTel());
-            userInfo.setName(userInfoData.getName() == null ? updateResult.getName() : userInfoData.getName());
-            userInfo.setPassword(userInfoData.getPassword() == null ? updateResult.getPassword() : userInfoData.getPassword());
-            userInfo.setAge(userInfoData.getAge() == null ? updateResult.getAge() : userInfoData.getAge());
-            userInfo.setSex(userInfoData.getSex() == null ? updateResult.getSex() : userInfoData.getSex());
-            userInfo.setRole(userInfoData.getRole() == null ? updateResult.getRole() : userInfoData.getRole());
-            userInfo.setState(userInfoData.getState() == null ? updateResult.getState() : userInfoData.getState());
+            userInfo.setName(userInfoData.getName());
+            userInfo.setPassword(userInfoData.getPassword());
+            userInfo.setAge(userInfoData.getAge());
+            userInfo.setSex(userInfoData.getSex());
+            userInfo.setRole(userInfoData.getRole() );
+            userInfo.setState(userInfoData.getState());
             userInfo.setGmtCreate(new Date());
             personRepository.saveAndFlush(userInfo);
             return makeSuccessResponse("已修改");
@@ -263,13 +255,16 @@ public class UserController extends BaseController {
      * @author: Yuxz
      * @create: 2019-03-09
      **/
-    @GetMapping("swich")
+    @GetMapping("switch")
     MKOResponse swich(@RequestParam Integer id,
                       @RequestParam Integer state){
         try{
             Optional<UserInfo> userInfo=personRepository.findById(id);
             if(!userInfo.isPresent()){
                 return makeResponse(MKOResponseCode.DataNotFound,"找不到此ID");
+            }
+            if(id==id){
+                return makeResponse(MKOResponseCode.DataUpdateFailed,"不能禁用自己的ID");
             }
             userInfo.get().setState(state);
             userInfo.get().getGmtCreate();
@@ -280,7 +275,32 @@ public class UserController extends BaseController {
             return makeBussessErrorResponse("未知错误");
         }
     }
+    /**
+     * @program: person manager system
+     * @description: 修改密码模块
+     * @author: Yuxz
+     * @create: 2019-03-09
+     **/
+    @GetMapping("changePassword")
+    MKOResponse changePassword (@RequestParam String oldPassword,
+                                @RequestParam String newPassword,
+                                @RequestParam Integer id){
+        try {
+            Optional<UserInfo> userResult = personRepository.findById(id);
+            if (!userResult.isPresent()){
+                return makeResponse(MKOResponseCode.DataNotFound, "", "找不到数据！");
+            }
+            if (!oldPassword.equals(userResult.get().getPassword())){
+                return makeResponse(MKOResponseCode.UnknownError, "", "密码错误！");
+            }
+            personRepository.updatePassword(newPassword,id);
+            return  makeSuccessResponse("");
 
+        }catch (Exception e){
+            e.printStackTrace();
+            return makeBussessErrorResponse("其他错误，修改失败");
+        }
+    }
 
     /*
     * 列表数据

@@ -16,7 +16,7 @@ import java.util.Date;
 @Setter
 @Getter
 @ToString
-@Table(name = "pms")
+@Table(name = "user")
 public class UserInfo {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
